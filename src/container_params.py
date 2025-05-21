@@ -87,5 +87,5 @@ class ContainerParams:
     
     @property
     def stats_path(self) -> Path:
-        """Get the full path to the output stats file."""
-        return self.output_path / "stats.json" 
+        """Get the full path to the output results file."""
+        return self.output_path / "results.json"

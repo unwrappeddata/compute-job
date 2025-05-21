@@ -2,37 +2,57 @@ from pathlib import Path
 import sqlite3
 import json
 import sys
-from typing import Dict, Any
+from typing import Dict, Any, List
 from query_engine_client import QueryEngineClient
 from container_params import ContainerParams, ContainerParamError
 
-def get_user_locales(db_path: Path) -> Dict[str, float]:
-    """Query the SQLite database and extract user_id: locale mapping.
-    
+def fetch_all_rows_as_dicts(db_path: Path) -> List[Dict[str, Any]]:
+    """Query the SQLite database and return all rows from the 'results' table
+    as a list of dictionaries.
+
     Args:
         db_path: Path to the SQLite database file
-        
+
     Returns:
-        Dictionary with user_id as keys and locale as values
-        
+        List of dictionaries, where each dictionary represents a row
+        and keys are column names. An empty list is returned if the
+        table is empty or an error occurs before populating results.
+
     Raises:
-        Exception: If there's an error connecting to or querying the database
+        sqlite3.Error: If there's an SQLite specific error during database interaction.
+        Exception: For other errors encountered during database processing.
     """
     try:
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
+
+        # Query all data from the results table
+        cursor.execute('SELECT * FROM results')
+
+        rows = cursor.fetchall()
         
-        # Query user_id and locale from the results table
-        cursor.execute('SELECT user_id, locale FROM results')
-        
-        # Create a dictionary with user_id as keys and locale as values
-        user_locales = {}
-        for row in cursor.fetchall():
-            user_id, locale = row
-            user_locales[str(user_id)] = locale
-        
+        # Get column names from cursor.description
+        # Column names will be strings. cursor.description might be None if the query doesn't return rows (e.g. failed query)
+        # or if the results table is empty and cursor.execute wasn't called or table doesn't exist.
+        # However, an empty 'results' table would yield rows=[] and description would still list columns.
+        # If 'results' table doesn't exist, sqlite3.Error will be raised.
+        if rows and cursor.description:
+            column_names = [str(description[0]) for description in cursor.description]
+        else:
+            # Handle cases like empty table or no columns effectively leading to no data to structure.
+            # If rows is empty, this part is not strictly needed as the loop below won't run.
+            # If description is None for some reason (shouldn't happen for SELECT * on existing table),
+            # this ensures column_names is empty or handled, preventing errors.
+            column_names = []
+
+
+        # Create a list of dictionaries
+        results_list = []
+        for row in rows:
+            results_list.append(dict(zip(column_names, row)))
+
         conn.close()
-        return user_locales
+        return results_list
     except sqlite3.Error as e:
         print(f"SQLite error: {e}")
         raise
@@ -40,11 +60,11 @@ def get_user_locales(db_path: Path) -> Dict[str, float]:
         print(f"Error querying database: {e}")
         raise
 
-def save_stats_to_json(data: Dict[str, Any], output_path: Path) -> None:
+def save_stats_to_json(data: Any, output_path: Path) -> None: # data type hint changed to Any, as it can be List or Dict
     """Save data to a JSON file.
     
     Args:
-        data: Data to save (dictionary that can be JSON serialized)
+        data: Data to save (JSON serializable)
         output_path: Path where the JSON file will be saved
         
     Raises:
@@ -104,15 +124,16 @@ def process_results(params: ContainerParams) -> None:
     Args:
         params: Container parameters
     """
-    user_data = get_user_locales(params.db_path)
+    # Call the data fetching function
+    all_rows_data = fetch_all_rows_as_dicts(params.db_path)
     
-    if user_data:
-        print(f"Found {len(user_data)} users in the database")
-        save_stats_to_json(user_data, params.stats_path)
+    if all_rows_data:
+        print(f"Found {len(all_rows_data)} rows in the database")
+        save_stats_to_json(all_rows_data, params.stats_path)
     else:
-        print("No user stats found in the database")
-        # Create an empty stats file to indicate processing completed
-        save_stats_to_json({}, params.stats_path)
+        print("No data found in the results table")
+        # Create an empty list in the JSON file to indicate processing completed but no data
+        save_stats_to_json([], params.stats_path)
 
 def main() -> None:
     """Main entry point for the worker."""
