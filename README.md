@@ -22,7 +22,13 @@ It processes the input data from the `results` table in the database and outputs
 The worker supports two modes of operation:
 
 - **Development Mode**: Set `DEV_MODE=1` to use a local database file without connecting to the query engine. This is useful for testing and development.
-  ```
+- ENV Values for local development when launching worker.py directly:
+```
+DEV_MODE=1;
+INPUT_PATH=../input
+OUTPUT_PATH=../output
+ ```
+
 # Example: Running in development mode
 docker run -e DEV_MODE=1 -v /local/path/to/input:/mnt/input -v /local/path/to/output:/mnt/output my-compute-job
   ```
